@@ -6,6 +6,7 @@
 // Cassandra query format
 // Mongo custom format
 // OpenTSDB bulk HTTP format
+// RiakTS format
 //
 // Supported use cases:
 // Devops: scale_var is the number of hosts to simulate, with log messages
@@ -25,7 +26,7 @@ import (
 )
 
 // Output data format choices:
-var formatChoices = []string{"influx-bulk", "es-bulk", "cassandra", "mongo", "opentsdb"}
+var formatChoices = []string{"influx-bulk", "es-bulk", "cassandra", "mongo", "opentsdb", "riakts"}
 
 // Use case choices:
 var useCaseChoices = []string{"devops", "iot"}
@@ -139,6 +140,8 @@ func main() {
 		serializer = (*Point).SerializeMongo
 	case "opentsdb":
 		serializer = (*Point).SerializeOpenTSDBBulk
+	case "riakts":
+		serializer = (*Point).SerializeRiakTS
 	default:
 		panic("unreachable")
 	}
