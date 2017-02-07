@@ -51,6 +51,11 @@ func main() {
 	var cluster *riak.Cluster
 	if doLoad {
 		cluster = buildCluster(daemonUrl)
+		defer func() {
+			if err := cluster.Stop(); err != nil {
+				fmt.Println(err.Error())
+			}
+		}()
 	}
 
 	if doLoad {
@@ -99,7 +104,7 @@ func scan(session *riak.Cluster, itemsPerBatch int) int64 {
 		dataRow := string(scanner.Bytes())
 		splitData := strings.Split(dataRow, ":")
 		tsI, _ := strconv.ParseInt(splitData[1], 10, 64)
-		timestamp := time.Unix(tsI, 0)
+		timestamp := time.Unix(0, tsI)
 		valD, _ := strconv.ParseFloat(splitData[2], 64)
 
 		row := []riak.TsCell{
@@ -112,7 +117,7 @@ func scan(session *riak.Cluster, itemsPerBatch int) int64 {
 
 		if n >= itemsPerBatch {
 			batchChan <- rows
-			rows = rows[:0]
+			rows = [][]riak.TsCell{}
 			n = 0
 		}
 	}
@@ -146,7 +151,7 @@ func processBatches(cluster *riak.Cluster) {
 		cmd, err := riak.NewTsStoreRowsCommandBuilder().WithTable("usertable").WithRows(batch).Build()
 		if err != nil {
 			log.Fatalf("Error while building write command: %s\n", err.Error())
-		}
+		} 
 
 		// Execute the write command
 		err = cluster.Execute(cmd)
@@ -179,11 +184,6 @@ func buildCluster(daemon_url string) *riak.Cluster {
 	if err != nil {
 		fmt.Println(err.Error())
 	}
-	defer func() {
-		if err = cluster.Stop(); err != nil {
-			fmt.Println(err.Error())
-		}
-	}()
 	if err = cluster.Start(); err != nil {
 		fmt.Println(err.Error())
 	}
@@ -191,8 +191,6 @@ func buildCluster(daemon_url string) *riak.Cluster {
 	ping := &riak.PingCommand{}
 	if err = cluster.Execute(ping); err != nil {
 		fmt.Println(err.Error())
-	} else {
-		fmt.Println("ping passed")
 	}
 
 	return cluster
