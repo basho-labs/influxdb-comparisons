@@ -126,6 +126,65 @@ func (q *CassandraQuery) Release() {
 	CassandraQueryPool.Put(q)
 }
 
+// RiakTSQuery encodes a RiakTS request. This will be serialized for use
+// by the query_benchmarker program.
+type RiakTSQuery struct {
+	HumanLabel       []byte
+	HumanDescription []byte
+
+	MeasurementName []byte // e.g. "cpu"
+	FieldName       []byte // e.g. "usage_user"
+	AggregationType []byte // e.g. "avg" or "sum"
+	TimeStart       time.Time
+	TimeEnd         time.Time
+	GroupByDuration time.Duration
+	TagSets         [][]string // semantically, each subgroup is OR'ed and they are all AND'ed together
+}
+
+var RiakTSQueryPool sync.Pool = sync.Pool{
+	New: func() interface{} {
+		return &RiakTSQuery{
+			HumanLabel:       []byte{},
+			HumanDescription: []byte{},
+			MeasurementName:  []byte{},
+			FieldName:        []byte{},
+			AggregationType:  []byte{},
+			TagSets:          [][]string{},
+		}
+	},
+}
+
+func NewRiakTSQuery() *RiakTSQuery {
+	return RiakTSQueryPool.Get().(*RiakTSQuery)
+}
+
+// String produces a debug-ready description of a Query.
+func (q *RiakTSQuery) String() string {
+	return fmt.Sprintf("HumanLabel: %s, HumanDescription: %s, MeasurementName: %s, AggregationType: %s, TimeStart: %s, TimeEnd: %s, GroupByDuration: %s, TagSets: %s", q.HumanLabel, q.HumanDescription, q.MeasurementName, q.AggregationType, q.TimeStart, q.TimeEnd, q.GroupByDuration, q.TagSets)
+}
+
+func (q *RiakTSQuery) HumanLabelName() []byte {
+	return q.HumanLabel
+}
+func (q *RiakTSQuery) HumanDescriptionName() []byte {
+	return q.HumanDescription
+}
+
+func (q *RiakTSQuery) Release() {
+	q.HumanLabel = q.HumanLabel[:0]
+	q.HumanDescription = q.HumanDescription[:0]
+
+	q.MeasurementName = q.MeasurementName[:0]
+	q.FieldName = q.FieldName[:0]
+	q.AggregationType = q.AggregationType[:0]
+	q.GroupByDuration = 0
+	q.TimeStart = time.Time{}
+	q.TimeEnd = time.Time{}
+	q.TagSets = q.TagSets[:0]
+
+	RiakTSQueryPool.Put(q)
+}
+
 // MongoQuery encodes a Mongo request. This will be serialized for use
 // by the query_benchmarker program.
 type MongoQuery struct {
