@@ -153,7 +153,7 @@ func NewRiakTSQuery(aggrLabel, tableName, rowName string, timeStartNanos, timeEn
 	var queryString string
 
 	if aggrLabel == "" {
-		queryString = fmt.Sprintf("SELECT time, value FROM usertable WHERE series = '%s' AND time >= %d AND time < %d", rowName, timeStartNanos, timeEndNanos)
+		queryString = fmt.Sprintf("SELECT time, value FROM usertable WHERE series = '%s' AND time >= %d AND time < %d", rowName, (timeStartNanos / 1000000), (timeEndNanos / 1000000))
 	} else {
 		queryString = fmt.Sprintf("SELECT %s(value) FROM usertable WHERE series = '%s' AND time >= %d AND time < %d", aggrLabel, rowName, timeStartNanos, timeEndNanos)
 	}

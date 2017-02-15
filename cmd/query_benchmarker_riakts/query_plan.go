@@ -170,29 +170,17 @@ func (qp *QueryPlanWithoutServerAggregation) Execute(cluster *riak.Cluster) ([]R
 		}
 
 		scmd, _ := cmd.(*riak.TsQueryCommand);
+
 		for _, row := range scmd.Response.Rows {
-			s := row[0].GetStringValue()
-			fmt.Println(s)
+			ts := row[0].GetTimeValue().UTC()
+			tsTruncated := ts.Truncate(qp.GroupByDuration)
+			bucketKey := TimeInterval{
+				Start: tsTruncated,	
+				End:   tsTruncated.Add(qp.GroupByDuration),
+			}
+
+			qp.Aggregators[bucketKey].Put(row[1].GetDoubleValue())
 		}
-		// iter := session.Query(q.QueryString).Iter()
-
-
-		// var timestamp_ns int64
-		// var value float64
-
-		// for iter.Scan(&timestamp_ns, &value) {
-		// 	ts := time.Unix(0, timestamp_ns).UTC()
-		// 	tsTruncated := ts.Truncate(qp.GroupByDuration)
-		// 	bucketKey := TimeInterval{
-		// 		Start: tsTruncated,
-		// 		End:   tsTruncated.Add(qp.GroupByDuration),
-		// 	}
-
-		// 	qp.Aggregators[bucketKey].Put(value)
-		// }
-		// if err := iter.Close(); err != nil {
-		// 	return nil, err
-		// }
 	}
 
 	// perform client-side aggregation across all buckets:
