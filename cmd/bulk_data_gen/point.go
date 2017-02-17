@@ -430,27 +430,28 @@ func (p *Point) SerializeRiakTS(w io.Writer) (err error) {
 	timestampNanos := p.Timestamp.UTC().UnixNano()
 	timestampBucket := p.Timestamp.UTC().Format("2006-01-02")
 
+	buf := make([]byte, 0, 256)
+	buf = append(buf, seriesIdPrefix...)
+	buf = append(buf, byte('#'))
+	buf = append(buf, []byte(timestampBucket)...)
+	buf = append(buf, ":"...)
+	buf = append(buf, []byte(fmt.Sprintf("%d:", timestampNanos))...)
+
 	for fieldId := 0; fieldId < len(p.FieldKeys); fieldId++ {
-		v := p.FieldValues[fieldId]
-
-		buf := make([]byte, 0, 256)
-		buf = append(buf, seriesIdPrefix...)
-		buf = append(buf, byte('#'))
-		buf = append(buf, p.FieldKeys[fieldId]...)
-		buf = append(buf, byte('#'))
-		buf = append(buf, []byte(timestampBucket)...)
-		buf = append(buf, ":"...)
-		buf = append(buf, []byte(fmt.Sprintf("%d:", timestampNanos))...)
-
-		buf = fastFormatAppend(v, buf)
-
-		buf = append(buf, []byte("\n")...)
-
-		_, err := w.Write(buf)
-		if err != nil {
-			return err
+		if (fieldId > 0) {
+			buf = fastFormatAppend(":", buf)
 		}
-	}
+		buf = fastFormatAppend(p.FieldKeys[fieldId], buf)
+		buf = fastFormatAppend("=", buf)
+		buf = fastFormatAppend(p.FieldValues[fieldId], buf)
+	} 
+
+	buf = append(buf, []byte("\n")...)
+
+	_, err = w.Write(buf)
+	if err != nil {
+		return err
+	}	
 
 	return nil
 }

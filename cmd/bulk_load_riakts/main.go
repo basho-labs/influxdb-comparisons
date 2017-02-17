@@ -14,6 +14,7 @@ import (
 	"time"
 	"strings"
 	"strconv"
+	//"bytes"
 
 	riak "github.com/basho/riak-go-client"
 )
@@ -29,7 +30,7 @@ var (
 
 // Global vars
 var (
-	batchChan    chan [][]riak.TsCell
+	batchChan    chan map[string][][]riak.TsCell
 	inputDone    chan struct{}
 	workersGroup sync.WaitGroup
 )
@@ -59,10 +60,10 @@ func main() {
 	}
 
 	if doLoad {
-		//createTable(cluster)
+		createTable(cluster)
 	}
 
-	batchChan = make(chan [][]riak.TsCell, workers)
+	batchChan = make(chan map[string][][]riak.TsCell, workers)
 	inputDone = make(chan struct{})
 
 	for i := 0; i < workers; i++ {
@@ -85,10 +86,7 @@ func main() {
 
 // scan reads lines from stdin. It expects input in the Cassandra CQL format.
 func scan(session *riak.Cluster, itemsPerBatch int) int64 {
-	var rows [][]riak.TsCell
-	if doLoad {
-		rows = [][]riak.TsCell{}
-	}
+	var rows = make(map[string][][]riak.TsCell)
 
 	var n int
 	var linesRead int64
@@ -103,21 +101,45 @@ func scan(session *riak.Cluster, itemsPerBatch int) int64 {
 		//<series>:<timestamp>:<value>
 		dataRow := string(scanner.Bytes())
 		splitData := strings.Split(dataRow, ":")
+		splitSeries := strings.Split(splitData[0], ",")
+		series := splitSeries[0]
+		tags := splitData[1]
 		tsI, _ := strconv.ParseInt(splitData[1], 10, 64)
 		timestamp := time.Unix(0, tsI)
-		valD, _ := strconv.ParseFloat(splitData[2], 64)
+
+		//var tableBuffer bytes.Buffer
+		//tableBuffer.WriteString("CREATE TABLE measurements_")
+		//tableBuffer.WriteString(series)
+		//tableBuffer.WriteString(" (series VARCHAR NOT NULL, tags VARCHAR NOT NULL, time TIMESTAMP NOT NULL")
 
 		row := []riak.TsCell{
-			riak.NewStringTsCell(splitData[0]), 
-			riak.NewTimestampTsCell(timestamp), 
-			riak.NewDoubleTsCell(valD)}
+			riak.NewStringTsCell(series),
+			riak.NewStringTsCell(tags), 
+			riak.NewTimestampTsCell(timestamp)}
 
-		rows = append(rows, row)
+		for rowId := 2; rowId < len(splitData); rowId++ {
+			//fmt.Println(splitData[rowId])
+			splitPair := strings.Split(splitData[rowId], "=")
+			valD, _ := strconv.ParseFloat(splitPair[1], 64)
+			cell := riak.NewDoubleTsCell(valD)
+			row = append(row, cell)
+
+			//tableBuffer.WriteString(", ")
+			//tableBuffer.WriteString(splitPair[0])
+			//tableBuffer.WriteString(" DOUBLE")
+		}
+
+		//tableBuffer.WriteString(", primary key ((quantum(time, 1, h)), time))")
+		//fmt.Println(tableBuffer.String())
+
+		//fmt.Println("\n\n")
+
+		rows[series] = append(rows[series], row)
 		n++
 
 		if n >= itemsPerBatch {
 			batchChan <- rows
-			rows = [][]riak.TsCell{}
+			rows = make(map[string][][]riak.TsCell)
 			n = 0
 		}
 	}
@@ -147,16 +169,19 @@ func processBatches(cluster *riak.Cluster) {
 			continue
 		}
 
-		// Build the write command
-		cmd, err := riak.NewTsStoreRowsCommandBuilder().WithTable("usertable").WithRows(batch).Build()
-		if err != nil {
-			log.Fatalf("Error while building write command: %s\n", err.Error())
-		} 
+		for k := range batch {
+			// Build the write command
+			tablename := fmt.Sprintf("measurements_%s", k)
+			cmd, err := riak.NewTsStoreRowsCommandBuilder().WithTable(tablename).WithRows(batch[k]).Build()
+			if err != nil {
+				log.Fatalf("Error while building write command: %s\n", err.Error())
+			} 
 
-		// Execute the write command
-		err = cluster.Execute(cmd)
-		if err != nil {
-			log.Fatalf("Error while writing: %s\n", err.Error())
+			// Execute the write command
+			err = cluster.Execute(cmd)
+			if err != nil {
+				log.Fatalf("Error while writing: %s\n", err.Error())
+			}
 		}
 	}
 	workersGroup.Done()
@@ -197,19 +222,28 @@ func buildCluster(daemon_url string) *riak.Cluster {
 }
 
 func createTable(cluster *riak.Cluster) {
-	q := `CREATE TABLE usertable (
-			series VARCHAR NOT NULL, 
-			time TIMESTAMP NOT NULL, 
-			value DOUBLE, 
-			primary key ((series, quantum(time, 900, s)), series, time))`
-	cmd, err := riak.NewTsQueryCommandBuilder().WithQuery(q).Build()
-	if err != nil {
-		log.Fatalf("Error while building create table command: %s\n", err.Error())
+	tableDefs := []string {
+		"CREATE TABLE measurements_cpu (series VARCHAR NOT NULL, tags VARCHAR NOT NULL, time TIMESTAMP NOT NULL, usage_user DOUBLE, usage_system DOUBLE, usage_idle DOUBLE, usage_nice DOUBLE, usage_iowait DOUBLE, usage_irq DOUBLE, usage_softirq DOUBLE, usage_steal DOUBLE, usage_guest DOUBLE, usage_guest_nice DOUBLE, primary key ((quantum(time, 1, h)), time))",
+		"CREATE TABLE measurements_diskio (series VARCHAR NOT NULL, tags VARCHAR NOT NULL, time TIMESTAMP NOT NULL, reads DOUBLE, writes DOUBLE, read_bytes DOUBLE, write_bytes DOUBLE, read_time DOUBLE, write_time DOUBLE, io_time DOUBLE, primary key ((quantum(time, 1, h)), time))",
+		"CREATE TABLE measurements_disk (series VARCHAR NOT NULL, tags VARCHAR NOT NULL, time TIMESTAMP NOT NULL, total DOUBLE, free DOUBLE, used DOUBLE, used_percent DOUBLE, inodes_total DOUBLE, inodes_total DOUBLE, inodes_used DOUBLE, primary key ((quantum(time, 1, h)), time))",
+		"CREATE TABLE measurements_kernel (series VARCHAR NOT NULL, tags VARCHAR NOT NULL, time TIMESTAMP NOT NULL, boot_time DOUBLE, interrupts DOUBLE, context_switches DOUBLE, processes_forked DOUBLE, disk_pages_in DOUBLE, disk_pages_out DOUBLE, primary key ((quantum(time, 1, h)), time))",
+		"CREATE TABLE measurements_mem (series VARCHAR NOT NULL, tags VARCHAR NOT NULL, time TIMESTAMP NOT NULL, total DOUBLE, available DOUBLE, used DOUBLE, free DOUBLE, cached DOUBLE, buffered DOUBLE, used_percent DOUBLE, available_percent DOUBLE, buffered_percent DOUBLE, primary key ((quantum(time, 1, h)), time))",
+		"CREATE TABLE measurements_net (series VARCHAR NOT NULL, tags VARCHAR NOT NULL, time TIMESTAMP NOT NULL, total_connections_received DOUBLE, expired_keys DOUBLE, evicted_keys DOUBLE, keyspace_hits DOUBLE, keyspace_misses DOUBLE, instantaneous_ops_per_sec DOUBLE, instantaneous_input_kbps DOUBLE, instantaneous_output_kbps DOUBLE, primary key ((quantum(time, 1, h)), time))",
+		"CREATE TABLE measurements_nginx (series VARCHAR NOT NULL, tags VARCHAR NOT NULL, time TIMESTAMP NOT NULL, accepts DOUBLE, active DOUBLE, handled DOUBLE, reading DOUBLE, requests DOUBLE, waiting DOUBLE, writing DOUBLE, primary key ((quantum(time, 1, h)), time))",
+		"CREATE TABLE measurements_postgresl (series VARCHAR NOT NULL, tags VARCHAR NOT NULL, time TIMESTAMP NOT NULL, numbackends DOUBLE, xact_commit DOUBLE, xact_rollback DOUBLE, blks_read DOUBLE, blks_hit DOUBLE, tup_returned DOUBLE, tup_fetched DOUBLE, tup_inserted DOUBLE, tup_updated DOUBLE, tup_deleted DOUBLE, conflicts DOUBLE, temp_files DOUBLE, temp_bytes DOUBLE, deadlocks DOUBLE, blk_read_time DOUBLE, blk_write_time DOUBLE, primary key ((quantum(time, 1, h)), time))",
+		"CREATE TABLE measurements_redis (series VARCHAR NOT NULL, tags VARCHAR NOT NULL, time TIMESTAMP NOT NULL, uptime_in_seconds DOUBLE, total_connections_received DOUBLE, expired_keys DOUBLE, evicted_keys DOUBLE, keyspace_hits DOUBLE, keyspace_misses DOUBLE, instantaneous_ops_per_sec DOUBLE, instantaneous_input_kbps DOUBLE, instantaneous_output_kbps DOUBLE, connected_clients DOUBLE, used_memory DOUBLE, used_memory_rss DOUBLE, used_memory_peak DOUBLE, used_memory_lua DOUBLE, rdb_changes_since_last_save DOUBLE, sync_full DOUBLE, sync_partial_ok DOUBLE, sync_partial_err DOUBLE, pubsub_channels DOUBLE, pubsub_patterns DOUBLE, latest_fork_usec DOUBLE, connected_slaves DOUBLE, master_repl_offset DOUBLE, repl_backlog_active DOUBLE, repl_backlog_size DOUBLE, repl_backlog_histlen DOUBLE, mem_fragmentation_ratio DOUBLE, used_cpu_sys DOUBLE, used_cpu_user DOUBLE, used_cpu_sys_children DOUBLE, used_cpu_user_children DOUBLE, primary key ((quantum(time, 1, h)), time))",
 	}
 
-	// Execute the create table command
-	err = cluster.Execute(cmd)
-	if err != nil {
-		log.Fatalf("Error while creating table: %s\n", err.Error())
+	for _,q := range tableDefs {
+		cmd, err := riak.NewTsQueryCommandBuilder().WithQuery(q).Build()
+		if err != nil {
+			log.Fatalf("Error while building create table command: %s\n", err.Error())
+		}
+
+		// Execute the create table command
+		_ = cluster.Execute(cmd)
+		// if err != nil {
+		// 	log.Fatalf("Error while creating table: %s\n", err.Error())
+		// }
 	}
 }
