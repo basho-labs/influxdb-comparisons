@@ -103,7 +103,7 @@ func scan(session *riak.Cluster, itemsPerBatch int) int64 {
 		splitData := strings.Split(dataRow, ":")
 		splitSeries := strings.Split(splitData[0], ",")
 		series := splitSeries[0]
-		tags := splitData[1]
+		tags := splitData[0]
 		tsI, _ := strconv.ParseInt(splitData[1], 10, 64)
 		timestamp := time.Unix(0, tsI)
 
