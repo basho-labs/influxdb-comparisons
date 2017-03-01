@@ -102,10 +102,10 @@ func (q *HLQuery) ToQueryPlanWithServerAggregation(csi *ClientSideIndex) (qp *Qu
 // ToQueryPlanWithoutServerAggregation combines an HLQuery with a
 // ClientSideIndex to make a QueryPlanWithoutServerAggregation.
 //
-// It executes at most one RiakTSQuery per series.
+// It executes at most one RiakTS series.
 func (q *HLQuery) ToQueryPlanWithoutServerAggregation(csi *ClientSideIndex) (qp *QueryPlanWithoutServerAggregation, err error) {
 	hlQueryInterval := NewTimeInterval(q.TimeStart, q.TimeEnd)
-	seriesChoices := csi.SeriesForMeasurementAndField(string(q.MeasurementName), string(q.FieldName))
+	seriesChoices := csi.SeriesForMeasurementAndField(string(q.MeasurementName), string(q.MeasurementName))
 
 	// Build the time buckets used for 'group by time'-type queries.
 	//
@@ -120,7 +120,7 @@ func (q *HLQuery) ToQueryPlanWithoutServerAggregation(csi *ClientSideIndex) (qp 
 		if !s.MatchesMeasurementName(string(q.MeasurementName)) {
 			continue
 		}
-		if !s.MatchesFieldName(string(q.FieldName)) {
+		if !s.MatchesFieldName(string(q.MeasurementName)) {
 			continue
 		}
 		if !s.MatchesTagSets(q.TagSets) {
@@ -153,9 +153,9 @@ func NewRiakTSQuery(aggrLabel, tableName, rowName string, timeStartNanos, timeEn
 	var queryString string
 
 	if aggrLabel == "" {
-		queryString = fmt.Sprintf("SELECT time, value FROM usertable WHERE series = '%s' AND time >= %d AND time < %d", rowName, (timeStartNanos / 1000000), (timeEndNanos / 1000000))
+		queryString = fmt.Sprintf("SELECT * FROM measurements_%s WHERE time >= %d AND time < %d", tableName, (timeStartNanos / 1000000), (timeEndNanos / 1000000))
 	} else {
-		queryString = fmt.Sprintf("SELECT %s(value) FROM usertable WHERE series = '%s' AND time >= %d AND time < %d", aggrLabel, rowName, timeStartNanos, timeEndNanos)
+		queryString = fmt.Sprintf("SELECT %s(value) FROM measurements_%s WHERE tags = '%s' AND time >= %d AND time < %d", aggrLabel, tableName, rowName, timeStartNanos, timeEndNanos)
 	}
 	return RiakTSQuery{queryString}
 }

@@ -158,8 +158,8 @@ func NewQueryPlanWithoutServerAggregation(aggrLabel string, groupByDuration time
 func (qp *QueryPlanWithoutServerAggregation) Execute(cluster *riak.Cluster) ([]RiakTSResult, error) {
 	// for each query, execute it, then put each result row into the
 	// client-side aggregator that matches its time bucket:
-	for _, q := range qp.RiakTSQueries {
-		cmd, err := riak.NewTsQueryCommandBuilder().WithQuery(q.QueryString).Build()
+	//for _, q := range qp.RiakTSQueries {
+		cmd, err := riak.NewTsQueryCommandBuilder().WithQuery(qp.RiakTSQueries[0].QueryString).Build()
 		if err != nil {
 			return nil, err
 		}
@@ -172,16 +172,17 @@ func (qp *QueryPlanWithoutServerAggregation) Execute(cluster *riak.Cluster) ([]R
 		scmd, _ := cmd.(*riak.TsQueryCommand);
 
 		for _, row := range scmd.Response.Rows {
-			ts := row[0].GetTimeValue().UTC()
-			tsTruncated := ts.Truncate(qp.GroupByDuration)
-			bucketKey := TimeInterval{
-				Start: tsTruncated,	
-				End:   tsTruncated.Add(qp.GroupByDuration),
+			for i := 3; i < len(scmd.Response.Columns); i++ {
+				ts := row[2].GetTimeValue().UTC()
+				tsTruncated := ts.Truncate(qp.GroupByDuration)
+				bucketKey := TimeInterval {
+					Start: tsTruncated,	
+					End:   tsTruncated.Add(qp.GroupByDuration),
+				}
+				qp.Aggregators[bucketKey].Put(row[i].GetDoubleValue())
 			}
-
-			qp.Aggregators[bucketKey].Put(row[1].GetDoubleValue())
 		}
-	}
+	//}
 
 	// perform client-side aggregation across all buckets:
 	results := make([]RiakTSResult, 0, len(qp.TimeBuckets))

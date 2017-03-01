@@ -4,6 +4,7 @@ import (
 	"log"
 	"strings"
 	"time"
+	"fmt"
 
 	riak "github.com/basho/riak-go-client"
 )
@@ -123,9 +124,9 @@ func (s *Series) parse() {
 	// expected format:
 	// cpu,hostname=host_0,region=eu-central-1,datacenter=eu-central-1a,rack=42,os=Ubuntu16.10,arch=x64,team=CHI,service=19,service_version=1,service_environment=staging#usage_idle#2016-01-01
 	sections := strings.Split(s.Id, "#")
-	if len(sections) != 3 {
-		log.Fatal("logic error: invalid series id")
-	}
+	// if len(sections) != 3 {
+	// 	log.Fatal("logic error: invalid series id")
+	// }
 	measurementAndTags := strings.Split(sections[0], ",")
 
 	// parse measurement:
@@ -143,10 +144,10 @@ func (s *Series) parse() {
 	s.Tags = tags
 
 	// parse field name:
-	s.Field = sections[1]
+	s.Field = s.Table//sections[1]
 
 	// parse time interval:
-	start, err := time.Parse(BucketTimeLayout, sections[2])
+	start, err := time.Parse(BucketTimeLayout, sections[1])
 	if err != nil {
 		log.Fatal("bad time bucket parse in pre-existing database series")
 	}
@@ -190,25 +191,40 @@ func (s *Series) MatchesTagSets(tagsets [][]string) bool {
 	return true
 }
 
-// FetchSeriesCollection returns all series in Cassandra that can be used for
+// FetchSeriesCollection returns all series in RiakTS that can be used for
 // fulfilling a query.
 func FetchSeriesCollection(daemonUrl string, timeout time.Duration) []Series {
 	cluster := NewRiakTSCluster(daemonUrl, timeout)
 	seriesCollection := []Series{}
 
 	// Build query command
-	cmd, err := riak.NewTsQueryCommandBuilder().WithQuery("SELECT series FROM usertable where time >= 1451606400000 and time <= 1451706000000").Build()
-	if err != nil {
-	    return seriesCollection
-	}	
+	tables := []string {
+		"cpu",
+		"diskio",
+		"disk",
+		"kernel",
+		"mem",
+		"net",
+		"nginx",
+		"postgresl",
+		"redis",
+	}
 
-	// Execute query command
-	err = cluster.Execute(cmd)
+	for _, tableName := range tables {
+		cmd, err := riak.NewTsQueryCommandBuilder().WithQuery(fmt.Sprintf("SELECT tags FROM measurements_%s where time >= 1451606400000 and time <= 1451656000000", tableName)).Build()
+		if err != nil {
+		    return seriesCollection
+		}	
 
-	scmd, _ := cmd.(*riak.TsQueryCommand);
-	for _, row := range scmd.Response.Rows {
-		s := NewSeries("usertable", row[0].GetStringValue())
-		seriesCollection = append(seriesCollection, s)
+		// Execute query command
+		err = cluster.Execute(cmd)
+
+		scmd, _ := cmd.(*riak.TsQueryCommand)
+		for _, row := range scmd.Response.Rows {
+			tags := row[0].GetStringValue()
+			s := NewSeries(tableName, tags)
+			seriesCollection = append(seriesCollection, s)
+		}
 	}
 
 	return seriesCollection
