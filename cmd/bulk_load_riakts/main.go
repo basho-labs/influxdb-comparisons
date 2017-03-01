@@ -37,7 +37,7 @@ var (
 
 // Parse args:
 func init() {
-	flag.StringVar(&daemonUrl, "url", "localhost:8087", "RiakTS URL.")
+	flag.StringVar(&daemonUrl, "url", "localhost:8087", "RiakTS URL. Multiple nodes can be defined, separated by commas")
 
 	flag.IntVar(&batchSize, "batch-size", 100, "Batch size (input items).")
 	flag.IntVar(&workers, "workers", 1, "Number of parallel requests to make.")
@@ -174,23 +174,26 @@ func processBatches(cluster *riak.Cluster) {
 
 func buildCluster(daemon_url string) *riak.Cluster {
 	var cluster *riak.Cluster
+	nodes := []*riak.Node{}
 
-	// Build nodes
-	nodeOpts := &riak.NodeOptions{
-		RemoteAddress: daemonUrl,
+	for _, nodeAddress := range strings.Split(daemon_url, ",") {
+		nodeOpts := &riak.NodeOptions{
+			RemoteAddress: nodeAddress,
+		}
+		var node *riak.Node
+		var err error
+		if node, err = riak.NewNode(nodeOpts); err != nil {
+			fmt.Println(err.Error())
+		}
+		nodes = append(nodes, node)
 	}
-	var node *riak.Node
-	var err error
-	if node, err = riak.NewNode(nodeOpts); err != nil {
-		fmt.Println(err.Error())
-	}
-	nodes := []*riak.Node{node}
+
 	opts := &riak.ClusterOptions{
 		Nodes: nodes,
 	}
 
 	// Build cluster
-	cluster, err = riak.NewCluster(opts)
+	cluster, err := riak.NewCluster(opts)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
