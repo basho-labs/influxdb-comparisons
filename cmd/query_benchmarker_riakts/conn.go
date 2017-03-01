@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"time"
+	"strings"
 
 	riak "github.com/basho/riak-go-client"
 )
@@ -11,23 +12,26 @@ import (
 // by default, and uses a connection pool.
 func NewRiakTSCluster(daemonUrl string, timeout time.Duration) *riak.Cluster {
 	var cluster *riak.Cluster
+	nodes := []*riak.Node{}
 
-	// Build nodes
-	nodeOpts := &riak.NodeOptions{
-		RemoteAddress: daemonUrl,
+	for _, nodeAddress := range strings.Split(daemonUrl, ",") {
+		nodeOpts := &riak.NodeOptions{
+			RemoteAddress: nodeAddress,
+		}
+		var node *riak.Node
+		var err error
+		if node, err = riak.NewNode(nodeOpts); err != nil {
+			fmt.Println(err.Error())
+		}
+		nodes = append(nodes, node)
 	}
-	var node *riak.Node
-	var err error
-	if node, err = riak.NewNode(nodeOpts); err != nil {
-		fmt.Println(err.Error())
-	}
-	nodes := []*riak.Node{node}
+
 	opts := &riak.ClusterOptions{
 		Nodes: nodes,
 	}
 
 	// Build cluster
-	cluster, err = riak.NewCluster(opts)
+	cluster, err := riak.NewCluster(opts)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
